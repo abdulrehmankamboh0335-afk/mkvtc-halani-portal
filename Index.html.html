@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MK Vocational & Training Center Halani Portal</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        },
+                        navy: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, collection, doc, setDoc, getDocs, deleteDoc, onSnapshot 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global App ID & Config Setup
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'mkvtc-halani-portal-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "demo-key",
+                authDomain: "demo-project.firebaseapp.com",
+                projectId: "demo-project",
+                storageBucket: "demo-project.appspot.com",
+                messagingSenderId: "123456789",
+                appId: "1:123456789:web:abcdef"
+            };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Make services accessible globally to the app scripts
+        window.db = db;
+        window.appId = appId;
+        window.dbCollections = {
+            students: collection(db, 'artifacts', appId, 'public', 'data', 'students'),
+            attendance: collection(db, 'artifacts', appId, 'public', 'data', 'attendance'),
+            admins: collection(db, 'artifacts', appId, 'public', 'data', 'admins')
+        };
+
+        // Firebase Cloud Authentication Setup
+        async function initCloudAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                console.log("Connected to MK VTC Halani Cloud Database");
+                window.cloudReady = true;
+                if (window.onCloudReady) window.onCloudReady();
+            } catch (err) {
+                console.error("Cloud Connection Error:", err);
+            }
+        }
+
+        initCloudAuth();
+    </script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col justify-between">
+
+    <!-- Header Navbar -->
+    <header class="bg-navy-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center border-b border-slate-700">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-brand-600 rounded-xl flex items-center justify-center font-black text-2xl text-white shadow-md">
+                    MK
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white">MK Vocational & Training Center</h1>
+                    <p class="text-xs text-brand-500 font-medium tracking-wider uppercase flex items-center gap-1">
+                        <span>Halani Branch Portal</span>
+                        <span id="cloud-status-badge" class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                            <i class="fa-solid fa-cloud mr-1"></i> Live Cloud Sync
+                        </span>
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Quick Navigation / View Toggle -->
+            <div id="nav-actions" class="flex items-center space-x-2 mt-2 sm:mt-0">
+                <button onclick="switchTab('student-login')" id="btn-tab-student" class="px-4 py-2 text-sm font-semibold rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition">
+                    <i class="fa-solid fa-user-graduate mr-1"></i> Student Portal
+                </button>
+                <button onclick="switchTab('admin-login')" id="btn-tab-admin" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition">
+                    <i class="fa-solid fa-user-shield mr-1"></i> Admin Portal
+                </button>
+                <button id="btn-logout" onclick="logout()" class="hidden px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 transition">
+                    <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto w-full px-4 py-6 flex-grow">
+
+        <!-- Notification Banner / Toast Message Box -->
+        <div id="alert-box" class="hidden mb-6 p-4 rounded-xl text-sm font-medium flex items-center justify-between shadow-md transition-all">
+            <span id="alert-msg" class="flex items-center"></span>
+            <button onclick="hideAlert()" class="ml-4 text-lg">&times;</button>
+        </div>
+
+        <!-- PUBLIC PUBLISHING GUIDE / TUTORIAL MODAL -->
+        <div id="modal-publish-guide" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 md:p-8 border border-slate-200 max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4 border-b pb-3">
+                    <h3 class="text-xl font-bold text-navy-900"><i class="fa-solid fa-globe text-brand-600 mr-2"></i>ویب سائٹ کو انٹرنیٹ پر لائیو (پبلک) کرنے کا طریقہ</h3>
+                    <button onclick="closePublishGuide()" class="text-slate-400 hover:text-slate-600 text-2xl font-bold">&times;</button>
+                </div>
+                
+                <div class="space-y-4 text-sm text-slate-700">
+                    <div class="bg-brand-50 p-4 rounded-xl border border-brand-200">
+                        <p class="font-bold text-brand-900 mb-1"><i class="fa-solid fa-circle-check mr-1 text-brand-600"></i> مبارک ہو! کلاؤڈ ڈسٹری بیوشن تیار ہے۔</p>
+                        <p class="text-xs text-brand-800">اب آپ کے تمام سٹوڈنٹس اپنے موبائل سے حاضری لگائیں گے اور ایڈمن کسی بھی کمپیوٹر سے لائیو دیکھ سکے گا۔ اسے لائیو کرنے کے لیے نیچے دیے گئے مراحل دیکھیں:</p>
+                    </div>
+
+                    <div class="border-l-4 border-blue-500 pl-4 py-2 bg-slate-50 rounded-r-xl">
+                        <h4 class="font-bold text-navy-900"><i class="fa-solid fa-cloud-arrow-up text-blue-600 mr-1"></i> Netlify Drop (سب سے آسان - 1 منٹ میں لائیو)</h4>
+                        <ol class="list-decimal list-inside text-xs space-y-1.5 mt-2 text-slate-600">
+                            <li>اپنے کمپیوٹر میں نیا فولڈر بنائیں اور اس میں یہ فائل <b>index.html</b> کے نام سے سیو کریں۔</li>
+                            <li>ویب سائٹ کھولیں: <a href="https://app.netlify.com/drop" target="_blank" class="text-blue-600 underline font-semibold">app.netlify.com/drop</a></li>
+                            <li>اپنے فولڈر کو ماؤس سے گھسیٹ کر (Drag & Drop) اس ویب سائٹ میں چھوڑ دیں۔</li>
+                            <li>آپ کو فوری طور پر ایک لائیو لنک مل جائے گا جو تمام سٹوڈنٹس کو بھیجا جا سکتا ہے!</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t text-right">
+                    <button onclick="closePublishGuide()" class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-lg shadow transition">
+                        سمجھ آگیا، پورٹل کھولیں
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- FORGOT PASSWORD MODAL -->
+        <div id="modal-forgot-password" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-navy-900" id="forgot-modal-title">Reset Password</h3>
+                    <button onclick="closeForgotModal()" class="text-slate-400 hover:text-slate-600 text-2xl font-bold">&times;</button>
+                </div>
+                
+                <p class="text-xs text-slate-500 mb-4" id="forgot-modal-desc">Verify your account details to set a new password.</p>
+
+                <!-- Student Reset Form -->
+                <form id="form-forgot-student" onsubmit="handleStudentPasswordReset(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">CNIC / B-Form No</label>
+                        <input type="text" id="forgot-cnic" required placeholder="Enter CNIC/B-Form" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Registered Mobile No</label>
+                        <input type="tel" id="forgot-phone" required placeholder="03001234567" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">New Password</label>
+                        <input type="password" id="forgot-new-pass" required placeholder="Enter new password" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-lg shadow transition">
+                        Reset Candidate Password
+                    </button>
+                </form>
+
+                <!-- Admin Reset Form -->
+                <form id="form-forgot-admin" onsubmit="handleAdminPasswordReset(event)" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Registered Admin Email</label>
+                        <input type="email" id="forgot-admin-email" required placeholder="admin@mkvtc.edu.pk" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">New Admin Password</label>
+                        <input type="password" id="forgot-admin-new-pass" required placeholder="Enter new password" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-navy-900 hover:bg-slate-800 text-white font-bold py-3 rounded-lg shadow transition">
+                        Reset Admin Password
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- STUDENT REGISTRATION FORM VIEW -->
+        <section id="view-student-register" class="hidden max-w-2xl mx-auto">
+            <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-slate-200">
+                <div class="text-center mb-6">
+                    <h2 class="text-2xl font-bold text-navy-900"><i class="fa-solid fa-user-plus text-brand-600 mr-2"></i>Candidate Registration</h2>
+                    <p class="text-sm text-slate-500 mt-1">MK Vocational & Training Center Halani Admission Form</p>
+                </div>
+
+                <form id="form-register" onsubmit="handleRegistration(event)" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Candidate Name *</label>
+                            <input type="text" id="reg-name" required placeholder="e.g. Ali Khan" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Father's Name *</label>
+                            <input type="text" id="reg-fname" required placeholder="e.g. Ghulam Rasul" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Surname / Caste *</label>
+                            <input type="text" id="reg-surname" required placeholder="e.g. Memon / Solangi" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Select Course *</label>
+                            <select id="reg-course" required class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white">
+                                <option value="">Choose Course...</option>
+                                <option value="DIT (Diploma in IT)">DIT (Diploma in Information Technology)</option>
+                                <option value="CIT (Certificate in IT)">CIT (Certificate in Information Technology)</option>
+                                <option value="Web Development">Web & Mobile App Development</option>
+                                <option value="Graphic Designing">Graphic Designing & Video Editing</option>
+                                <option value="AutoCAD & Drafting">AutoCAD & Technical Drafting</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Mobile No *</label>
+                            <input type="tel" id="reg-mobile" required placeholder="03001234567" pattern="[0-9]{11}" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">CNIC / B-Form No *</label>
+                            <input type="text" id="reg-cnic" required placeholder="45302-1234567-1" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Create Password *</label>
+                        <input type="password" id="reg-password" required placeholder="••••••••" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-lg shadow-lg hover:shadow-xl transition transform active:scale-95 mt-2">
+                        Complete Cloud Registration & Login
+                    </button>
+                </form>
+
+                <div class="mt-4 text-center">
+                    <p class="text-sm text-slate-600">Already registered? 
+                        <button onclick="switchTab('student-login')" class="text-brand-700 font-bold hover:underline">Login here</button>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- STUDENT LOGIN VIEW -->
+        <section id="view-student-login" class="max-w-md mx-auto">
+            <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-slate-200">
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 bg-brand-100 text-brand-700 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl font-bold">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-navy-900">Candidate Login</h2>
+                    <p class="text-xs text-slate-500 mt-1">MK VTC Halani Attendance Portal</p>
+                </div>
+
+                <form id="form-student-login" onsubmit="handleStudentLogin(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">CNIC / B-Form No</label>
+                        <input type="text" id="login-cnic" required placeholder="Enter your CNIC/B-Form" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-semibold text-slate-600 uppercase">Password</label>
+                            <button type="button" onclick="openForgotModal('student')" class="text-xs text-brand-700 font-bold hover:underline">Forgot Password?</button>
+                        </div>
+                        <input type="password" id="login-password" required placeholder="Enter password" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-lg shadow-lg transition">
+                        Sign In
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center border-t border-slate-100 pt-4">
+                    <p class="text-sm text-slate-600">New candidate at MK VTC? 
+                        <button onclick="switchTab('student-register')" class="text-brand-700 font-bold hover:underline">Register Now</button>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- STUDENT DASHBOARD & ATTENDANCE -->
+        <section id="view-student-dashboard" class="hidden max-w-3xl mx-auto space-y-6">
+            <!-- Student Info Card -->
+            <div class="bg-gradient-to-r from-navy-900 to-slate-800 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <span class="inline-block px-3 py-1 bg-brand-600 text-white text-xs font-bold rounded-full mb-2" id="dash-course">DIT</span>
+                        <h2 class="text-2xl font-bold" id="dash-name">Candidate Name</h2>
+                        <p class="text-slate-300 text-sm mt-1"><i class="fa-solid fa-user-shield text-slate-400 mr-1"></i> S/O: <span id="dash-fname">Father Name</span> | Caste: <span id="dash-surname">Surname</span></p>
+                        <p class="text-slate-300 text-xs mt-1"><i class="fa-solid fa-id-card text-slate-400 mr-1"></i> CNIC: <span id="dash-cnic">CNIC</span> | Phone: <span id="dash-phone">Phone</span></p>
+                    </div>
+                    <div class="bg-slate-800/80 backdrop-blur p-4 rounded-xl border border-slate-700 text-center min-w-[140px]">
+                        <span class="block text-xs uppercase text-slate-400 font-semibold">Today's Date</span>
+                        <span class="text-lg font-bold text-brand-500" id="dash-today-date">--/--/----</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance Marker Card -->
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-slate-200 text-center">
+                <h3 class="text-lg font-bold text-navy-900 mb-2">Daily Class Attendance</h3>
+                <p class="text-xs text-slate-500 mb-6">Mark your attendance daily for MK VTC Halani classes.</p>
+
+                <div id="attendance-status-container">
+                    <button id="btn-mark-attendance" onclick="markTodayAttendance()" class="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-lg rounded-xl shadow-lg hover:shadow-xl transition transform active:scale-95">
+                        <i class="fa-solid fa-check-circle mr-2"></i> Mark Present Today
+                    </button>
+                </div>
+            </div>
+
+            <!-- Student History Log -->
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+                <h3 class="text-base font-bold text-navy-900 mb-4"><i class="fa-solid fa-history text-brand-600 mr-2"></i>My Attendance Record</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 uppercase text-xs">
+                            <tr>
+                                <th class="p-3 rounded-l-lg">Date</th>
+                                <th class="p-3">Time</th>
+                                <th class="p-3 rounded-r-lg">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="student-attendance-history" class="divide-y divide-slate-100">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ADMIN LOGIN & REGISTRATION VIEW -->
+        <section id="view-admin-login" class="hidden max-w-md mx-auto">
+            <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-slate-200">
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 bg-navy-800 text-white rounded-full flex items-center justify-center mx-auto mb-3 text-2xl font-bold shadow-md">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-navy-900" id="admin-auth-heading">Admin Portal Login</h2>
+                    <p class="text-xs text-slate-500 mt-1">MK VTC Halani Management Portal</p>
+                </div>
+
+                <!-- Admin Auth Mode Switcher -->
+                <div class="flex bg-slate-100 rounded-lg p-1 mb-6">
+                    <button onclick="toggleAdminAuthMode('login')" id="btn-admin-mode-login" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white text-navy-900 shadow">Login</button>
+                    <button onclick="toggleAdminAuthMode('register')" id="btn-admin-mode-register" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-navy-900">Register Admin</button>
+                </div>
+
+                <!-- Admin Login Form -->
+                <form id="form-admin-login" onsubmit="handleAdminLogin(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Admin Email Address</label>
+                        <input type="email" id="admin-user" required placeholder="admin@mkvtc.edu.pk" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-semibold text-slate-600 uppercase">Admin Password</label>
+                            <button type="button" onclick="openForgotModal('admin')" class="text-xs text-navy-800 font-bold hover:underline">Forgot Password?</button>
+                        </div>
+                        <input type="password" id="admin-pass" required placeholder="Password" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-navy-900 hover:bg-slate-800 text-white font-bold py-3 rounded-lg shadow-lg transition">
+                        Login as Administrator
+                    </button>
+                </form>
+
+                <!-- Admin Registration Form -->
+                <form id="form-admin-register" onsubmit="handleAdminRegister(event)" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Full Name</label>
+                        <input type="text" id="admin-reg-name" required placeholder="e.g. Administrator Name" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Admin Email Address</label>
+                        <input type="email" id="admin-reg-email" required placeholder="admin@mkvtc.edu.pk" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Create Password</label>
+                        <input type="password" id="admin-reg-pass" required placeholder="••••••••" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-navy-800 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-lg shadow-lg transition">
+                        Register New Admin Account
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- ADMIN DASHBOARD & CONTROLS -->
+        <section id="view-admin-dashboard" class="hidden space-y-6">
+            <!-- Stats Bar -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white rounded-xl p-5 shadow border-l-4 border-brand-500">
+                    <p class="text-xs font-bold uppercase text-slate-400">Total Registered Candidates</p>
+                    <p class="text-3xl font-extrabold text-navy-900 mt-1" id="stat-total-students">0</p>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow border-l-4 border-blue-500">
+                    <p class="text-xs font-bold uppercase text-slate-400">Today's Attendance Marked</p>
+                    <p class="text-3xl font-extrabold text-blue-600 mt-1" id="stat-today-attendance">0</p>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow border-l-4 border-purple-500 flex justify-between items-center">
+                    <div>
+                        <p class="text-xs font-bold uppercase text-slate-400">Public Live Host</p>
+                        <p class="text-sm font-bold text-purple-600 mt-1">Netlify / GitHub Pages</p>
+                    </div>
+                    <button onclick="openPublishGuide()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow">
+                        <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Hosting Guide
+                    </button>
+                </div>
+            </div>
+
+            <!-- Admin Navigation Tabs -->
+            <div class="flex border-b border-slate-200 bg-white rounded-t-xl px-4 pt-3 space-x-4">
+                <button onclick="switchAdminSubTab('attendance-tab')" id="tab-btn-attendance" class="pb-3 border-b-2 border-brand-600 font-bold text-brand-600 text-sm">
+                    <i class="fa-solid fa-clipboard-user mr-1"></i> Daily Attendance Records
+                </button>
+                <button onclick="switchAdminSubTab('candidates-tab')" id="tab-btn-candidates" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-bold text-sm">
+                    <i class="fa-solid fa-users mr-1"></i> Registered Candidates List
+                </button>
+                <button onclick="switchAdminSubTab('messaging-tab')" id="tab-btn-messaging" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-bold text-sm">
+                    <i class="fa-solid fa-paper-plane mr-1"></i> Fee Reminder & SMS Alerts
+                </button>
+            </div>
+
+            <!-- TAB 1: Attendance List with Filters and Download -->
+            <div id="subtab-attendance" class="bg-white rounded-b-xl shadow p-6 space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-navy-900">Attendance Log Sheet</h3>
+                        <p class="text-xs text-slate-500">Live cloud attendance records for MK VTC candidates.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <input type="date" id="admin-filter-date" onchange="renderAdminAttendanceTable()" class="px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        <button onclick="downloadAttendanceCSV()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm rounded-lg shadow flex items-center gap-2">
+                            <i class="fa-solid fa-download"></i> Download CSV/Excel List
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead class="bg-slate-100 text-slate-700 uppercase text-xs">
+                            <tr>
+                                <th class="p-3 border-b">Date</th>
+                                <th class="p-3 border-b">Time</th>
+                                <th class="p-3 border-b">Candidate Name</th>
+                                <th class="p-3 border-b">Father Name</th>
+                                <th class="p-3 border-b">Course</th>
+                                <th class="p-3 border-b">CNIC / B-Form</th>
+                                <th class="p-3 border-b">Mobile No</th>
+                                <th class="p-3 border-b">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-attendance-table-body" class="divide-y divide-slate-100">
+                            <!-- Dynamic Content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 2: Candidate Management (Delete / Search) -->
+            <div id="subtab-candidates" class="hidden bg-white rounded-b-xl shadow p-6 space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-navy-900">Registered Candidates Directory</h3>
+                        <p class="text-xs text-slate-500">Manage, search, or remove registered students across devices.</p>
+                    </div>
+                    <input type="text" id="admin-search-candidate" oninput="renderAdminCandidatesTable()" placeholder="Search Name, CNIC or Course..." class="px-4 py-2 border border-slate-300 rounded-lg text-sm w-full md:w-72">
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead class="bg-slate-100 text-slate-700 uppercase text-xs">
+                            <tr>
+                                <th class="p-3 border-b">Reg. ID</th>
+                                <th class="p-3 border-b">Candidate Name</th>
+                                <th class="p-3 border-b">Father Name</th>
+                                <th class="p-3 border-b">Surname</th>
+                                <th class="p-3 border-b">Course</th>
+                                <th class="p-3 border-b">CNIC / B-Form</th>
+                                <th class="p-3 border-b">Mobile No</th>
+                                <th class="p-3 border-b text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-candidates-table-body" class="divide-y divide-slate-100">
+                            <!-- Dynamic Content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 3: Fee Reminders & SMS Sender -->
+            <div id="subtab-messaging" class="hidden bg-white rounded-b-xl shadow p-6 space-y-6">
+                <div>
+                    <h3 class="text-lg font-bold text-navy-900">Fees Reminder & Notification Center</h3>
+                    <p class="text-xs text-slate-500">Send custom fee reminders and announcements directly via WhatsApp or SIM SMS under <strong>MK VTC HALANI</strong> brand.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Select Target Candidate *</label>
+                            <select id="msg-target-candidate" onchange="autoFillMessage()" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="">Select Candidate...</option>
+                                <!-- Populated dynamically -->
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Template Type</label>
+                            <select id="msg-template" onchange="autoFillMessage()" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="fee">Monthly Fee Reminder</option>
+                                <option value="attendance">Low Attendance Alert</option>
+                                <option value="custom">Custom Message</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Message Preview / Body</label>
+                            <textarea id="msg-body" rows="5" class="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:outline-none text-sm"></textarea>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button onclick="sendWhatsAppReminder()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2">
+                                <i class="fa-brands fa-whatsapp text-lg"></i> Send via WhatsApp
+                            </button>
+                            <button onclick="sendSMS()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-comment-sms text-lg"></i> Send Direct SMS
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SMS Preview Box -->
+                    <div class="bg-slate-900 text-white p-6 rounded-2xl flex flex-col justify-between shadow-xl">
+                        <div>
+                            <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+                                <span class="text-xs text-brand-400 font-mono"><i class="fa-solid fa-signal mr-1"></i> SENDER ID</span>
+                                <span class="bg-brand-600 text-white text-xs px-2 py-0.5 rounded font-bold tracking-wider">MK VTC HALANI</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mb-2">Message Preview:</p>
+                            <div id="preview-text" class="bg-slate-800 p-4 rounded-xl text-sm font-sans leading-relaxed text-slate-200 border border-slate-700 min-h-[140px]">
+                                Select a candidate to preview message.
+                            </div>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-4 text-center"><i class="fa-solid fa-shield-halved mr-1"></i> Authorized Official Communication System - MK Vocational & Training Center Halani</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-navy-900 text-slate-400 text-xs py-4 text-center border-t border-slate-800">
+        <p>&copy; 2026 <strong>MK Vocational & Training Center Halani</strong>. All Rights Reserved.</p>
+    </footer>
+
+    <script>
+        // Local Session Storage Keys
+        const STORAGE_SESSION_KEY = 'mkvtc_current_session_v1';
+
+        // Memory Store for Realtime Sync
+        let stateStudents = [];
+        let stateAttendance = [];
+        let stateAdmins = [];
+
+        // Setup Firestore Real-time Subscriptions
+        function setupCloudSync() {
+            if (!window.dbCollections) return;
+
+            // 1. Listen for Students updates
+            import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ onSnapshot }) => {
+                onSnapshot(window.dbCollections.students, (snapshot) => {
+                    stateStudents = [];
+                    snapshot.forEach((doc) => stateStudents.push(doc.data()));
+                    console.log("Synced Students Cloud:", stateStudents.length);
+                    refreshCurrentUI();
+                }, (error) => console.error("Students sync error:", error));
+
+                // 2. Listen for Attendance updates
+                onSnapshot(window.dbCollections.attendance, (snapshot) => {
+                    stateAttendance = [];
+                    snapshot.forEach((doc) => stateAttendance.push(doc.data()));
+                    console.log("Synced Attendance Cloud:", stateAttendance.length);
+                    refreshCurrentUI();
+                }, (error) => console.error("Attendance sync error:", error));
+
+                // 3. Listen for Admin Accounts
+                onSnapshot(window.dbCollections.admins, (snapshot) => {
+                    stateAdmins = [];
+                    snapshot.forEach((doc) => stateAdmins.push(doc.data()));
+                }, (error) => console.error("Admins sync error:", error));
+            });
+        }
+
+        window.onCloudReady = setupCloudSync;
+
+        // Helpers
+        function getTodayDateString() {
+            const d = new Date();
+            return d.toISOString().split('T')[0];
+        }
+
+        function refreshCurrentUI() {
+            const session = JSON.parse(localStorage.getItem(STORAGE_SESSION_KEY) || 'null');
+            if (session) {
+                if (session.type === 'student') {
+                    renderStudentDashboard();
+                } else if (session.type === 'admin') {
+                    renderAdminDashboard();
+                }
+            }
+        }
+
+        // Guide Modal Controller
+        function closePublishGuide() {
+            document.getElementById('modal-publish-guide').classList.add('hidden');
+        }
+        function openPublishGuide() {
+            document.getElementById('modal-publish-guide').classList.remove('hidden');
+        }
+
+        // Admin Auth Toggle (Login vs Register)
+        function toggleAdminAuthMode(mode) {
+            hideAlert();
+            const loginForm = document.getElementById('form-admin-login');
+            const regForm = document.getElementById('form-admin-register');
+            const btnLogin = document.getElementById('btn-admin-mode-login');
+            const btnReg = document.getElementById('btn-admin-mode-register');
+            const heading = document.getElementById('admin-auth-heading');
+
+            if (mode === 'login') {
+                loginForm.classList.remove('hidden');
+                regForm.classList.add('hidden');
+                btnLogin.className = "flex-1 py-1.5 text-xs font-bold rounded-md bg-white text-navy-900 shadow";
+                btnReg.className = "flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-navy-900";
+                heading.innerText = "Admin Portal Login";
+            } else {
+                loginForm.classList.add('hidden');
+                regForm.classList.remove('hidden');
+                btnReg.className = "flex-1 py-1.5 text-xs font-bold rounded-md bg-white text-navy-900 shadow";
+                btnLogin.className = "flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-navy-900";
+                heading.innerText = "Register Admin Account";
+            }
+        }
+
+        // Forgot Password Modal Controller
+        function openForgotModal(type) {
+            hideAlert();
+            const modal = document.getElementById('modal-forgot-password');
+            const title = document.getElementById('forgot-modal-title');
+            const studentForm = document.getElementById('form-forgot-student');
+            const adminForm = document.getElementById('form-forgot-admin');
+
+            modal.classList.remove('hidden');
+            if (type === 'student') {
+                title.innerText = "Candidate Password Reset";
+                studentForm.classList.remove('hidden');
+                adminForm.classList.add('hidden');
+            } else {
+                title.innerText = "Admin Password Reset";
+                adminForm.classList.remove('hidden');
+                studentForm.classList.add('hidden');
+            }
+        }
+
+        function closeForgotModal() {
+            document.getElementById('modal-forgot-password').classList.add('hidden');
+            document.getElementById('form-forgot-student').reset();
+            document.getElementById('form-forgot-admin').reset();
+        }
+
+        async function handleStudentPasswordReset(e) {
+            e.preventDefault();
+            const cnic = document.getElementById('forgot-cnic').value.trim();
+            const phone = document.getElementById('forgot-phone').value.trim();
+            const newPass = document.getElementById('forgot-new-pass').value;
+
+            const student = stateStudents.find(s => s.cnic === cnic && s.phone === phone);
+
+            if (student) {
+                student.pass = newPass;
+                // Update Cloud Record
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                await setDoc(doc(window.dbCollections.students, cnic.replace(/[^a-zA-Z0-9]/g, "_")), student);
+
+                closeForgotModal();
+                showAlert("Password updated in Cloud! You can now login with your new password.");
+            } else {
+                showAlert("No candidate found matching this CNIC and Mobile Number!", false);
+            }
+        }
+
+        async function handleAdminPasswordReset(e) {
+            e.preventDefault();
+            const email = document.getElementById('forgot-admin-email').value.trim().toLowerCase();
+            const newPass = document.getElementById('forgot-admin-new-pass').value;
+
+            const admin = stateAdmins.find(a => a.email.toLowerCase() === email);
+
+            if (admin) {
+                admin.pass = newPass;
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                await setDoc(doc(window.dbCollections.admins, email.replace(/[^a-zA-Z0-9]/g, "_")), admin);
+
+                closeForgotModal();
+                showAlert("Admin password updated successfully! Please login now.");
+            } else {
+                showAlert("No registered admin account found with this email address!", false);
+            }
+        }
+
+        async function handleRegistration(e) {
+            e.preventDefault();
+            const cnic = document.getElementById('reg-cnic').value.trim();
+
+            if (stateStudents.some(s => s.cnic === cnic)) {
+                showAlert('Candidate with this CNIC/B-Form is already registered in Cloud Database!', false);
+                return;
+            }
+
+            const newStudent = {
+                id: Date.now().toString(),
+                name: document.getElementById('reg-name').value.trim(),
+                fname: document.getElementById('reg-fname').value.trim(),
+                surname: document.getElementById('reg-surname').value.trim(),
+                course: document.getElementById('reg-course').value,
+                phone: document.getElementById('reg-mobile').value.trim(),
+                cnic: cnic,
+                pass: document.getElementById('reg-password').value
+            };
+
+            try {
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                const docId = cnic.replace(/[^a-zA-Z0-9]/g, "_");
+                await setDoc(doc(window.dbCollections.students, docId), newStudent);
+
+                // Auto Session Login
+                localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify({ type: 'student', cnic: cnic }));
+                showAlert('Cloud Registration Successful! Welcome to MK VTC Halani.');
+                document.getElementById('form-register').reset();
+                switchTab('student-dashboard');
+            } catch (err) {
+                console.error(err);
+                showAlert('Registration error occurred while saving to Cloud.', false);
+            }
+        }
+
+        function handleStudentLogin(e) {
+            e.preventDefault();
+            const cnic = document.getElementById('login-cnic').value.trim();
+            const pass = document.getElementById('login-password').value;
+
+            const user = stateStudents.find(s => s.cnic === cnic && s.pass === pass);
+
+            if (user) {
+                localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify({ type: 'student', cnic: cnic }));
+                showAlert(`Welcome back, ${user.name}!`);
+                document.getElementById('form-student-login').reset();
+                switchTab('student-dashboard');
+            } else {
+                showAlert('Invalid CNIC or Password. Please check registration or try again.', false);
+            }
+        }
+
+        async function handleAdminRegister(e) {
+            e.preventDefault();
+            const email = document.getElementById('admin-reg-email').value.trim().toLowerCase();
+            const name = document.getElementById('admin-reg-name').value.trim();
+            const pass = document.getElementById('admin-reg-pass').value;
+
+            if (stateAdmins.some(a => a.email.toLowerCase() === email)) {
+                showAlert('An Admin with this email is already registered!', false);
+                return;
+            }
+
+            const newAdmin = { name, email, pass };
+
+            try {
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                const docId = email.replace(/[^a-zA-Z0-9]/g, "_");
+                await setDoc(doc(window.dbCollections.admins, docId), newAdmin);
+
+                localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify({ type: 'admin', email }));
+                showAlert(`Admin Account created successfully! Welcome ${name}.`);
+                document.getElementById('form-admin-register').reset();
+                switchTab('admin-dashboard');
+            } catch (err) {
+                showAlert('Failed to create admin in Cloud database.', false);
+            }
+        }
+
+        function handleAdminLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('admin-user').value.trim().toLowerCase();
+            const pass = document.getElementById('admin-pass').value;
+
+            const admin = stateAdmins.find(a => a.email.toLowerCase() === email && a.pass === pass);
+
+            if (admin) {
+                localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify({ type: 'admin', email }));
+                showAlert(`Logged in as Admin: ${admin.name}`);
+                document.getElementById('form-admin-login').reset();
+                switchTab('admin-dashboard');
+            } else {
+                showAlert('Invalid Admin Email or Password!', false);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem(STORAGE_SESSION_KEY);
+            showAlert('Successfully logged out.');
+            switchTab('student-login');
+        }
+
+        // Notification System
+        function showAlert(msg, isSuccess = true) {
+            const box = document.getElementById('alert-box');
+            const msgEl = document.getElementById('alert-msg');
+            box.className = `mb-6 p-4 rounded-xl text-sm font-medium flex items-center justify-between shadow-md transition-all ${
+                isSuccess ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'
+            }`;
+            msgEl.innerHTML = isSuccess ? `<i class="fa-solid fa-circle-check text-green-600 mr-2 text-base"></i> ${msg}` : `<i class="fa-solid fa-circle-exclamation text-red-600 mr-2 text-base"></i> ${msg}`;
+            box.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        function hideAlert() {
+            document.getElementById('alert-box').classList.add('hidden');
+        }
+
+        // View Navigation
+        function switchTab(viewName) {
+            hideAlert();
+            ['view-student-register', 'view-student-login', 'view-student-dashboard', 'view-admin-login', 'view-admin-dashboard'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+
+            document.getElementById('btn-tab-student').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:text-white transition";
+            document.getElementById('btn-tab-admin').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:text-white transition";
+
+            if (viewName === 'student-login') {
+                document.getElementById('view-student-login').classList.remove('hidden');
+                document.getElementById('btn-tab-student').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-brand-600 text-white shadow";
+            } else if (viewName === 'student-register') {
+                document.getElementById('view-student-register').classList.remove('hidden');
+                document.getElementById('btn-tab-student').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-brand-600 text-white shadow";
+            } else if (viewName === 'student-dashboard') {
+                document.getElementById('view-student-dashboard').classList.remove('hidden');
+                document.getElementById('btn-tab-student').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-brand-600 text-white shadow";
+                renderStudentDashboard();
+            } else if (viewName === 'admin-login') {
+                document.getElementById('view-admin-login').classList.remove('hidden');
+                document.getElementById('btn-tab-admin').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-navy-800 text-white shadow";
+            } else if (viewName === 'admin-dashboard') {
+                document.getElementById('view-admin-dashboard').classList.remove('hidden');
+                document.getElementById('btn-tab-admin').className = "px-4 py-2 text-sm font-semibold rounded-lg bg-navy-800 text-white shadow";
+                renderAdminDashboard();
+            }
+
+            const session = JSON.parse(localStorage.getItem(STORAGE_SESSION_KEY) || 'null');
+            if (session) {
+                document.getElementById('btn-logout').classList.remove('hidden');
+            } else {
+                document.getElementById('btn-logout').classList.add('hidden');
+            }
+        }
+
+        // Admin Sub-Tab Controller
+        function switchAdminSubTab(tabName) {
+            ['subtab-attendance', 'subtab-candidates', 'subtab-messaging'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            ['tab-btn-attendance', 'tab-btn-candidates', 'tab-btn-messaging'].forEach(id => {
+                document.getElementById(id).className = "pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-bold text-sm";
+            });
+
+            if (tabName === 'attendance-tab') {
+                document.getElementById('subtab-attendance').classList.remove('hidden');
+                document.getElementById('tab-btn-attendance').className = "pb-3 border-b-2 border-brand-600 font-bold text-brand-600 text-sm";
+                renderAdminAttendanceTable();
+            } else if (tabName === 'candidates-tab') {
+                document.getElementById('subtab-candidates').classList.remove('hidden');
+                document.getElementById('tab-btn-candidates').className = "pb-3 border-b-2 border-brand-600 font-bold text-brand-600 text-sm";
+                renderAdminCandidatesTable();
+            } else if (tabName === 'messaging-tab') {
+                document.getElementById('subtab-messaging').classList.remove('hidden');
+                document.getElementById('tab-btn-messaging').className = "pb-3 border-b-2 border-brand-600 font-bold text-brand-600 text-sm";
+                populateMessagingCandidates();
+            }
+        }
+
+        function renderStudentDashboard() {
+            const session = JSON.parse(localStorage.getItem(STORAGE_SESSION_KEY) || 'null');
+            if (!session || session.type !== 'student') {
+                switchTab('student-login');
+                return;
+            }
+
+            const currentStudent = stateStudents.find(s => s.cnic === session.cnic);
+
+            if (!currentStudent) {
+                return;
+            }
+
+            document.getElementById('dash-name').innerText = currentStudent.name;
+            document.getElementById('dash-fname').innerText = currentStudent.fname;
+            document.getElementById('dash-surname').innerText = currentStudent.surname;
+            document.getElementById('dash-course').innerText = currentStudent.course;
+            document.getElementById('dash-cnic').innerText = currentStudent.cnic;
+            document.getElementById('dash-phone').innerText = currentStudent.phone;
+            document.getElementById('dash-today-date').innerText = new Date().toLocaleDateString('en-GB');
+
+            const today = getTodayDateString();
+            const markedToday = stateAttendance.some(a => a.cnic === currentStudent.cnic && a.date === today);
+
+            const container = document.getElementById('attendance-status-container');
+            if (markedToday) {
+                container.innerHTML = `
+                    <div class="p-4 bg-brand-50 border border-brand-200 rounded-xl inline-block text-brand-800">
+                        <i class="fa-solid fa-circle-check text-2xl text-brand-600 mb-1"></i>
+                        <p class="font-bold text-base">Attendance Marked for Today!</p>
+                        <p class="text-xs text-brand-700">Your presence has been recorded in the MK VTC Halani Cloud System.</p>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <button id="btn-mark-attendance" onclick="markTodayAttendance()" class="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-lg rounded-xl shadow-lg hover:shadow-xl transition transform active:scale-95">
+                        <i class="fa-solid fa-check-circle mr-2"></i> Mark Present Today
+                    </button>
+                `;
+            }
+
+            const myHistory = stateAttendance.filter(a => a.cnic === currentStudent.cnic).reverse();
+            const historyBody = document.getElementById('student-attendance-history');
+            
+            if (myHistory.length === 0) {
+                historyBody.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-slate-400">No attendance records found yet.</td></tr>`;
+            } else {
+                historyBody.innerHTML = myHistory.map(item => `
+                    <tr>
+                        <td class="p-3 font-medium">${item.date}</td>
+                        <td class="p-3 text-slate-500">${item.time}</td>
+                        <td class="p-3"><span class="px-2.5 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">Present</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        async function markTodayAttendance() {
+            const session = JSON.parse(localStorage.getItem(STORAGE_SESSION_KEY) || 'null');
+            if (!session || session.type !== 'student') return;
+
+            const student = stateStudents.find(s => s.cnic === session.cnic);
+            if (!student) return;
+
+            const today = getTodayDateString();
+            const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const attendanceRecord = {
+                date: today,
+                time: nowTime,
+                cnic: student.cnic,
+                name: student.name,
+                fname: student.fname,
+                course: student.course,
+                phone: student.phone
+            };
+
+            try {
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                const docId = `${today}_${student.cnic.replace(/[^a-zA-Z0-9]/g, "_")}`;
+                await setDoc(doc(window.dbCollections.attendance, docId), attendanceRecord);
+
+                showAlert('Today attendance marked in Cloud successfully!');
+                renderStudentDashboard();
+            } catch (err) {
+                showAlert('Failed to mark attendance. Cloud connection issue.', false);
+            }
+        }
+
+        function renderAdminDashboard() {
+            const session = JSON.parse(localStorage.getItem(STORAGE_SESSION_KEY) || 'null');
+            if (!session || session.type !== 'admin') {
+                switchTab('admin-login');
+                return;
+            }
+
+            const today = getTodayDateString();
+
+            document.getElementById('stat-total-students').innerText = stateStudents.length;
+            document.getElementById('stat-today-attendance').innerText = stateAttendance.filter(a => a.date === today).length;
+
+            if (!document.getElementById('admin-filter-date').value) {
+                document.getElementById('admin-filter-date').value = today;
+            }
+            renderAdminAttendanceTable();
+        }
+
+        function renderAdminAttendanceTable() {
+            const filterDate = document.getElementById('admin-filter-date').value;
+            const tbody = document.getElementById('admin-attendance-table-body');
+
+            const filtered = filterDate ? stateAttendance.filter(a => a.date === filterDate) : stateAttendance;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-400">No attendance records on this date (${filterDate}).</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(item => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-3 font-medium">${item.date}</td>
+                    <td class="p-3 text-slate-500">${item.time}</td>
+                    <td class="p-3 font-bold text-navy-900">${item.name}</td>
+                    <td class="p-3 text-slate-600">${item.fname}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 bg-brand-100 text-brand-800 text-xs font-bold rounded">${item.course}</span></td>
+                    <td class="p-3 text-slate-600">${item.cnic}</td>
+                    <td class="p-3 text-slate-600">${item.phone}</td>
+                    <td class="p-3"><span class="px-2.5 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">Present</span></td>
+                </tr>
+            `).join('');
+        }
+
+        function downloadAttendanceCSV() {
+            const filterDate = document.getElementById('admin-filter-date').value;
+            const filtered = filterDate ? stateAttendance.filter(a => a.date === filterDate) : stateAttendance;
+
+            if (filtered.length === 0) {
+                showAlert('No attendance data available to download for selected date.', false);
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Date,Time,Candidate Name,Father Name,Course,CNIC / B-Form,Mobile No,Status\n";
+
+            filtered.forEach(row => {
+                csvContent += `"${row.date}","${row.time}","${row.name}","${row.fname}","${row.course}","${row.cnic}","${row.phone}","Present"\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `MK_VTC_Halani_Attendance_${filterDate || 'All'}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function renderAdminCandidatesTable() {
+            const searchTerm = (document.getElementById('admin-search-candidate').value || '').toLowerCase();
+            const tbody = document.getElementById('admin-candidates-table-body');
+
+            const filtered = stateStudents.filter(s => 
+                s.name.toLowerCase().includes(searchTerm) || 
+                s.cnic.toLowerCase().includes(searchTerm) || 
+                s.course.toLowerCase().includes(searchTerm) ||
+                s.surname.toLowerCase().includes(searchTerm)
+            );
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-400">No matching candidates found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map((s, index) => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-3 font-mono text-xs text-slate-400">${index + 1}</td>
+                    <td class="p-3 font-bold text-navy-900">${s.name}</td>
+                    <td class="p-3 text-slate-600">${s.fname}</td>
+                    <td class="p-3 text-slate-600">${s.surname}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded">${s.course}</span></td>
+                    <td class="p-3 text-slate-600">${s.cnic}</td>
+                    <td class="p-3 text-slate-600">${s.phone}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="deleteCandidate('${s.cnic}')" class="px-3 py-1 bg-red-100 text-red-700 hover:bg-red-600 hover:text-white text-xs font-bold rounded transition">
+                            <i class="fa-solid fa-trash mr-1"></i> Delete
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function deleteCandidate(cnic) {
+            const candidate = stateStudents.find(s => s.cnic === cnic);
+            if (!candidate) return;
+
+            const confirmDelete = window.confirm(`Are you sure you want to delete candidate ${candidate.name} (${candidate.cnic}) from Cloud?`);
+            if (confirmDelete) {
+                try {
+                    const { doc, deleteDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                    const docId = cnic.replace(/[^a-zA-Z0-9]/g, "_");
+                    await deleteDoc(doc(window.dbCollections.students, docId));
+
+                    showAlert(`Candidate ${candidate.name} has been deleted from Cloud.`);
+                } catch (err) {
+                    showAlert('Error removing candidate from Cloud.', false);
+                }
+            }
+        }
+
+        // Messaging Center
+        function populateMessagingCandidates() {
+            const select = document.getElementById('msg-target-candidate');
+            select.innerHTML = '<option value="">Select Candidate...</option>' + 
+                stateStudents.map(s => `<option value="${s.cnic}">${s.name} S/O ${s.fname} (${s.course})</option>`).join('');
+            autoFillMessage();
+        }
+
+        function autoFillMessage() {
+            const cnic = document.getElementById('msg-target-candidate').value;
+            const templateType = document.getElementById('msg-template').value;
+            const student = stateStudents.find(s => s.cnic === cnic);
+            const msgBody = document.getElementById('msg-body');
+            const previewText = document.getElementById('preview-text');
+
+            if (!student) {
+                msgBody.value = "Please select a candidate first.";
+                previewText.innerText = "Select a candidate to preview message.";
+                return;
+            }
+
+            let msg = "";
+            if (templateType === 'fee') {
+                msg = `Dear ${student.name} S/O ${student.fname},\nThis is an official fee reminder from MK VTC HALANI for your ${student.course} course. Please submit your monthly fee at the Halani office at your earliest convenience.\nThank you,\nMK VTC HALANI`;
+            } else if (templateType === 'attendance') {
+                msg = `Dear ${student.name},\nYour attendance at MK VTC HALANI for course ${student.course} is running low. Please ensure daily attendance marking.\nRegards,\nMK VTC HALANI`;
+            } else {
+                msg = `Dear ${student.name},\n[Write your custom message here]\nRegards,\nMK VTC HALANI`;
+            }
+
+            msgBody.value = msg;
+            previewText.innerText = msg;
+        }
+
+        document.getElementById('msg-body').addEventListener('input', function() {
+            document.getElementById('preview-text').innerText = this.value;
+        });
+
+        function sendWhatsAppReminder() {
+            const cnic = document.getElementById('msg-target-candidate').value;
+                const student = stateStudents.find(s => s.cnic === cnic);
+            const msg = document.getElementById('msg-body').value;
+
+            if (!student) {
+                showAlert('Please select a target candidate!', false);
+                return;
+            }
+
+            let phone = student.phone.replace(/[^0-9]/g, '');
+            if (phone.startsWith('0')) {
+                phone = '92' + phone.substring(1);
+            }
+
+            const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+        }
+
+        function sendSMS() {
+            const cnic = document.getElementById('msg-target-candidate').value;
+            const student = stateStudents.find(s => s.cnic === cnic);
+            const msg = document.getElementById('msg-body').value;
+
+            if (!student) {
+                showAlert('Please select a target candidate!', false);
+                return;
+            }
+
+            let phone = student.phone.replace(/[^0-9]/g, '');
+            if (phone.startsWith('0')) {
+                phone = '92' + phone.substring(1);
+            }
+
+            const smsUrl = `sms:+${phone}?body=${encodeURIComponent(msg)}`;
+            window.location.href = smsUrl;
+        }
+
+        // Initialize Session on Load
+        window.onload = function() {
+            const session = JSON.parse(localStorage.getItem(STORAGE_SESSION_KEY) || 'null');
+            if (session) {
+                if (session.type === 'student') {
+                    switchTab('student-dashboard');
+                } else if (session.type === 'admin') {
+                    switchTab('admin-dashboard');
+                }
+            } else {
+                switchTab('student-login');
+            }
+        };
+    </script>
+</body>
+</html>
